@@ -56,12 +56,29 @@ pipeline {
                     sh '''
                         oc login --token=${OS_TOKEN} --server=${OPENSHIFT_URL} > /dev/null 2>&1
 
-                        # Extract the dynamic Sandbox HTTPS route URL
                         ROUTE_HOST=$(oc get route ${IMAGE_NAME} -n ${OS_PROJECT} -o jsonpath='{.spec.host}')
                         echo "Testing Sandbox endpoint: https://${ROUTE_HOST}/healthz"
 
-                        # Test Liveness Endpoint
-                        curl -s -k https://${ROUTE_HOST}/healthz | grep "ok"
+                        # Retry mechanism (6 attempts x 5 seconds = 30 seconds max wait)
+                        SUCCESS=false
+                        for i in {1..6}; do
+                          echo "Attempt $i of 6..."
+                          RESPONSE=$(curl -s -k "https://${ROUTE_HOST}/healthz")
+                          echo "Response received: $RESPONSE"
+
+                          if echo "$RESPONSE" | grep -i "ok" > /dev/null; then
+                            echo "Health check succeeded!"
+                            SUCCESS=true
+                            break
+                          fi
+
+                          sleep 5
+                        done
+
+                        if [ "$SUCCESS" = false ]; then
+                          echo "Health check failed after 6 attempts."
+                          exit 1
+                        fi
                     '''
                 }
             }
